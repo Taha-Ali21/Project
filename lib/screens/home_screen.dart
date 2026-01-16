@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import 'add_habit_screen.dart';
 import 'habit_detail_screen.dart';
 import 'stats_screen.dart';
@@ -7,7 +10,6 @@ import 'calendar_screen.dart';
 import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  // FIXED: Added required parameters to fix main.dart errors
   final bool isDarkMode;
   final Function(bool) onThemeChanged;
 
@@ -22,9 +24,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<String> habits = [];
   int _selectedIndex = 0;
-  String userName = "María";
+  final User? currentUser = FirebaseAuth.instance.currentUser;
+  late String userName;
 
   final List<String> allQuotes = [
     "Pequeños pasos crean grandes cambios",
@@ -37,7 +39,6 @@ class _HomeScreenState extends State<HomeScreen> {
     "Un día a la vez",
     "Cree en ti y todo será posible",
     "La motivación te ayuda a empezar, el hábito te mantiene",
-    "El mejor momento para plantar un árbol fue hace 20 años; el segundo mejor es ahora",
     "Gana la mañana, gana el día",
     "Cada paso cuenta",
     "Persiste y vencerás",
@@ -50,6 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _randomizeQuotes();
+    userName = currentUser?.displayName ?? "Usuario";
   }
 
   void _randomizeQuotes() {
@@ -58,17 +60,16 @@ class _HomeScreenState extends State<HomeScreen> {
     currentQuotes = shuffled.take(3).toList();
   }
 
-  // FIXED: Properly passing global theme state to ProfileScreen
   List<Widget> _getPages() {
     return [
       _buildHomeContent(),
-      StatsScreen(userHabits: habits),
-      CalendarScreen(userHabits: habits),
+      const StatsScreen(userHabits: []),
+      const CalendarScreen(userHabits: []),
       ProfileScreen(
-        userHabits: habits,
+        userHabits: const [],
         userName: userName,
-        isDarkMode: widget.isDarkMode, // Passed from main.dart
-        onThemeChanged: widget.onThemeChanged, // Passed from main.dart
+        isDarkMode: widget.isDarkMode,
+        onThemeChanged: widget.onThemeChanged,
         onNameChanged: (newName) {
           setState(() {
             userName = newName;
@@ -80,33 +81,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> pages = _getPages();
-
     return Scaffold(
-      // Removed hardcoded background color to support Night Mode automatically
-      body: pages[_selectedIndex],
-
+      body: _getPages()[_selectedIndex],
       floatingActionButton: _selectedIndex == 0
           ? FloatingActionButton(
               backgroundColor: const Color(0xFF7B2FF7),
               child: const Icon(Icons.add, color: Colors.white),
-              onPressed: () async {
-                final result = await Navigator.push(
+              onPressed: () {
+                Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => const AddHabitScreen(),
                   ),
                 );
-                if (result != null && result is String) {
-                  setState(() {
-                    habits.add(result);
-                    _randomizeQuotes();
-                  });
-                }
               },
             )
           : null,
-
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) => setState(() => _selectedIndex = index),
@@ -151,50 +141,70 @@ class _HomeScreenState extends State<HomeScreen> {
               style: TextStyle(color: Colors.grey, fontSize: 16),
             ),
             const SizedBox(height: 30),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Mis Hábitos',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                if (habits.isNotEmpty)
-                  Text(
-                    '${habits.length} hábitos activos',
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-              ],
+            const Text(
+              'Mis Hábitos',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 15),
-            habits.isEmpty
-                ? _buildEmptyState()
-                : Column(
-                    children: habits.map((h) => _buildHabitItem(h)).toList(),
-                  ),
+
+            // STREAMBUILDER: Targets User collection (Capitalized to match your console)
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('User')
+                  .doc(currentUser?.uid)
+                  .collection('habits')
+                  .orderBy('createdAt', descending: true)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return _buildEmptyState();
+                }
+
+                final habitDocs = snapshot.data!.docs;
+
+                // FIX: ListView.builder for unlimited scaling
+                return ListView.builder(
+                  shrinkWrap: true, // Needed for SingleChildScrollView
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: habitDocs.length,
+                  itemBuilder: (context, index) {
+                    final data =
+                        habitDocs[index].data() as Map<String, dynamic>;
+                    return _buildHabitItem(
+                      habitDocs[index].id,
+                      data['title'] ?? 'Sin nombre',
+                      data['isCompleted'] ?? false,
+                    );
+                  },
+                );
+              },
+            ),
+
             const SizedBox(height: 30),
             const Text(
               'Inspiración para hoy',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
-            Column(
-              children: currentQuotes
-                  .map(
-                    (q) => Card(
-                      elevation: 0,
-                      margin: const EdgeInsets.only(bottom: 10),
-                      child: ListTile(
-                        title: Text(
-                          '"$q"',
-                          style: const TextStyle(
-                            fontStyle: FontStyle.italic,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
+            // Re-using the logic for quotes
+            ...currentQuotes.map(
+              (q) => Card(
+                elevation: 0,
+                margin: const EdgeInsets.only(bottom: 10),
+                child: ListTile(
+                  title: Text(
+                    '"$q"',
+                    style: const TextStyle(
+                      fontStyle: FontStyle.italic,
+                      fontSize: 13,
                     ),
-                  )
-                  .toList(),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -224,23 +234,29 @@ class _HomeScreenState extends State<HomeScreen> {
               fontWeight: FontWeight.w500,
             ),
           ),
-          Text(
-            'Tus hábitos aparecerán aquí',
-            style: TextStyle(color: Colors.grey, fontSize: 14),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildHabitItem(String title) {
+  Widget _buildHabitItem(String docId, String title, bool isCompleted) {
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: ListTile(
-        leading: const Icon(
-          Icons.check_circle_outline,
-          color: Color(0xFF7B2FF7),
+        leading: IconButton(
+          icon: Icon(
+            isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
+            color: const Color(0xFF7B2FF7),
+          ),
+          onPressed: () {
+            FirebaseFirestore.instance
+                .collection('User')
+                .doc(currentUser?.uid)
+                .collection('habits')
+                .doc(docId)
+                .update({'isCompleted': !isCompleted});
+          },
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: const Text(
@@ -248,18 +264,46 @@ class _HomeScreenState extends State<HomeScreen> {
           style: TextStyle(fontSize: 12),
         ),
         trailing: const Icon(Icons.chevron_right),
-        onTap: () async {
-          final result = await Navigator.push(
+        onTap: () {
+          Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => HabitDetailScreen(habitName: title),
             ),
           );
-          if (result == 'delete') {
-            setState(() {
-              habits.remove(title);
-            });
-          }
+        },
+        onLongPress: () {
+          // Confirm before deleting for better UX
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Eliminar hábito'),
+              content: const Text(
+                '¿Estás seguro de que quieres borrar este hábito?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    FirebaseFirestore.instance
+                        .collection('User')
+                        .doc(currentUser?.uid)
+                        .collection('habits')
+                        .doc(docId)
+                        .delete();
+                    Navigator.pop(context);
+                  },
+                  child: const Text(
+                    'Eliminar',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
+              ],
+            ),
+          );
         },
       ),
     );

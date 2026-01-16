@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // 1. Added Auth import
+import 'package:cloud_firestore/cloud_firestore.dart'; // 2. Added Firestore import
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -13,6 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _obscureText = true;
+  bool _isLoading = false; // To show a spinner during login
 
   @override
   void dispose() {
@@ -21,15 +24,47 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _handleLogin() {
+  // 3. UPDATED: Real Firebase Login Logic
+  Future<void> _handleLogin() async {
     if (_formKey.currentState!.validate()) {
-      Navigator.pushReplacementNamed(context, '/home');
+      setState(() => _isLoading = true);
+      try {
+        // Log in the user
+        UserCredential userCredential = await FirebaseAuth.instance
+            .signInWithEmailAndPassword(
+              email: _emailController.text.trim(),
+              password: _passwordController.text.trim(),
+            );
+
+        // Ensure a basic profile exists in your 'User' collection
+        await FirebaseFirestore.instance
+            .collection('User')
+            .doc(userCredential.user!.uid)
+            .set({
+              'email': _emailController.text.trim(),
+              'lastLogin': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+
+        if (mounted) {
+          // Navigates to /home via the StreamBuilder in main.dart
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      } on FirebaseAuthException catch (e) {
+        String message = 'Ocurrió un error';
+        if (e.code == 'user-not-found') message = 'No se encontró el usuario';
+        if (e.code == 'wrong-password') message = 'Contraseña incorrecta';
+
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Detect if Night Mode is active
     bool isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -72,7 +107,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   vertical: 40,
                 ),
                 decoration: BoxDecoration(
-                  // FIXED: Use theme-aware cardColor instead of white
                   color: Theme.of(context).cardColor,
                   borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(40),
@@ -98,11 +132,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             Icons.email_outlined,
                             isDark,
                           ),
-                          validator: (value) {
-                            if (value == null || !value.contains('@'))
-                              return 'Ingresa un correo válido';
-                            return null;
-                          },
+                          validator: (value) =>
+                              (value == null || !value.contains('@'))
+                              ? 'Ingresa un correo válido'
+                              : null,
                         ),
                         const SizedBox(height: 20),
                         const Text(
@@ -130,7 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 ),
                               ),
-                          validator: (value) => value == null || value.isEmpty
+                          validator: (value) => (value == null || value.isEmpty)
                               ? 'Ingresa tu contraseña'
                               : null,
                         ),
@@ -140,25 +173,30 @@ class _LoginScreenState extends State<LoginScreen> {
                           width: double.infinity,
                           height: 55,
                           child: ElevatedButton(
-                            onPressed: _handleLogin,
+                            onPressed: _isLoading
+                                ? null
+                                : _handleLogin, // Disable button while loading
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF7B2FF7),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(15),
                               ),
                             ),
-                            child: const Text(
-                              'Iniciar sesión',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                              ),
-                            ),
+                            child: _isLoading
+                                ? const CircularProgressIndicator(
+                                    color: Colors.white,
+                                  )
+                                : const Text(
+                                    'Iniciar sesión',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                    ),
+                                  ),
                           ),
                         ),
 
                         const SizedBox(height: 25),
-
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -195,13 +233,11 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Helper for consistent input design with Dark Mode support
   InputDecoration _inputStyle(String hint, IconData icon, bool isDark) {
     return InputDecoration(
       hintText: hint,
       prefixIcon: Icon(icon),
       filled: true,
-      // Adjust fill color based on theme
       fillColor: isDark
           ? Colors.white.withOpacity(0.05)
           : Colors.blue.withOpacity(0.05),

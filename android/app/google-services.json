@@ -1,0 +1,30 @@
+ {
+  "project_info": {
+    "project_number": "947110896002",
+    "firebase_url": "https://thrive-72525-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "thrive-72525",
+    "storage_bucket": "thrive-72525.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:947110896002:android:8b3f1e4ce8712efb986f9b",
+        "android_client_info": {
+          "package_name": "com.example.project"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBXlIZc7-SAzuh1y4_AxfeJRTEd1TedzEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
