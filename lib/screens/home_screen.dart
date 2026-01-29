@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 
 import 'add_habit_screen.dart';
 import 'habit_detail_screen.dart';
@@ -58,6 +59,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final random = Random();
     var shuffled = List<String>.from(allQuotes)..shuffle(random);
     currentQuotes = shuffled.take(3).toList();
+  }
+
+  String getTodayDate() {
+    final now = DateTime.now();
+    final formatted = DateFormat(
+      "EEEE, d 'de' MMMM 'de' y",
+      'es_ES',
+    ).format(now);
+
+    return formatted[0].toUpperCase() + formatted.substring(1);
   }
 
   List<Widget> _getPages() {
@@ -136,9 +147,9 @@ class _HomeScreenState extends State<HomeScreen> {
               'Hola, $userName 👋',
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
-            const Text(
-              'Viernes, 16 de Enero de 2026',
-              style: TextStyle(color: Colors.grey, fontSize: 16),
+            Text(
+              getTodayDate(),
+              style: const TextStyle(color: Colors.grey, fontSize: 16),
             ),
             const SizedBox(height: 30),
             const Text(
@@ -147,7 +158,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 15),
 
-            // STREAMBUILDER: Targets User collection (Capitalized to match your console)
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('User')
@@ -166,9 +176,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 final habitDocs = snapshot.data!.docs;
 
-                // FIX: ListView.builder for unlimited scaling
                 return ListView.builder(
-                  shrinkWrap: true, // Needed for SingleChildScrollView
+                  shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: habitDocs.length,
                   itemBuilder: (context, index) {
@@ -190,7 +199,6 @@ class _HomeScreenState extends State<HomeScreen> {
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
-            // Re-using the logic for quotes
             ...currentQuotes.map(
               (q) => Card(
                 elevation: 0,
@@ -269,39 +277,6 @@ class _HomeScreenState extends State<HomeScreen> {
             context,
             MaterialPageRoute(
               builder: (context) => HabitDetailScreen(habitName: title),
-            ),
-          );
-        },
-        onLongPress: () {
-          // Confirm before deleting for better UX
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Eliminar hábito'),
-              content: const Text(
-                '¿Estás seguro de que quieres borrar este hábito?',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    FirebaseFirestore.instance
-                        .collection('User')
-                        .doc(currentUser?.uid)
-                        .collection('habits')
-                        .doc(docId)
-                        .delete();
-                    Navigator.pop(context);
-                  },
-                  child: const Text(
-                    'Eliminar',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                ),
-              ],
             ),
           );
         },
